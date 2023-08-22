@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: tgymnich/fork-sync@v1.3
         with:
-          owner: OCA
+          owner: NextERP-Romania
           github_token: ${{ secrets.FORK_SYNC_TOKEN }}
           personal_token: ${{ secrets.FORK_SYNC_SIREKO_TOKEN }}
           base: "14.0"
