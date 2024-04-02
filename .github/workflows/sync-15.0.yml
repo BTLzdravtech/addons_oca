@@ -2,13 +2,13 @@ name: "Sync Fork Branch 15.0"
 
 on:
   schedule:
-    - cron: '0 */1 * * *' # on every hour
+    - cron: '0 8 * * 4' # on Thursday at 8:00
   workflow_dispatch: # on button click
 
 jobs:
   sync:
 
-    runs-on: [self-hosted, linux, x64, btl]
+    runs-on: ubuntu-latest
 
     steps:
       - uses: tgymnich/fork-sync@v1.3
