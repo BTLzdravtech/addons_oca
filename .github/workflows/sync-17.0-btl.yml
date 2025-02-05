@@ -19,5 +19,5 @@ jobs:
           base: "17.0-btl"
           head: "17.0"
           merge_method: merge
-          pr_title: "Fork Sync Branch 17.0-dev"
+          pr_title: "Fork Sync Branch 17.0-btl"
           auto_approve: true
