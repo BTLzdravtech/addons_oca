@@ -1,4 +1,4 @@
-name: "Sync Fork Branch 18.0-btl"
+name: "Sync Fork Branch 18.0"
 
 on:
   schedule:
@@ -16,8 +16,8 @@ jobs:
           owner: NextERP-Romania
           github_token: ${{ secrets.FORK_SYNC_TOKEN }}
           personal_token: ${{ secrets.FORK_SYNC_SIREKO_TOKEN }}
-          base: "18.0-btl"
+          base: "18.0"
           head: "18.0"
           merge_method: merge
-          pr_title: "Fork Sync Branch 18.0-btl"
+          pr_title: "Fork Sync Branch 18.0"
           auto_approve: true
