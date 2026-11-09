@@ -25,6 +25,9 @@ currency:
   - currency_rate_update
 delivery-carrier:
   - delivery_state
+e-commerce:
+  - website_snippet_product_category
+  - website_sale_product_attribute_value_filter_existing
 hr:
   - hr_employee_firstname
 mail:

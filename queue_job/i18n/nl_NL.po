@@ -79,11 +79,6 @@ msgid "Attachment Count"
 msgstr "Aantal bijlagen"
 
 #. module: queue_job
-#: model:ir.actions.server,name:queue_job.ir_cron_autovacuum_queue_jobs_ir_actions_server
-msgid "AutoVacuum Job Queue"
-msgstr "AutoVacuum wachtrijtaken"
-
-#. module: queue_job
 #: model:ir.model,name:queue_job.model_base
 msgid "Base"
 msgstr "Basis"
@@ -116,6 +111,12 @@ msgstr "Taken annuleren"
 #: model_terms:ir.ui.view,arch_db:queue_job.view_queue_job_search
 msgid "Cancelled"
 msgstr "Geannuleerd"
+
+#. module: queue_job
+#. odoo-python
+#: code:addons/queue_job/job.py:0
+msgid "Cancelled because a job it depends on was cancelled"
+msgstr ""
 
 #. module: queue_job
 #. odoo-python
@@ -230,6 +231,16 @@ msgstr "Afhankelijkheden"
 #: model:ir.model.fields,field_description:queue_job.field_queue_job__dependency_graph
 msgid "Dependency Graph"
 msgstr "Afhankelijkheidsgrafiek"
+
+#. module: queue_job
+#: model:ir.model.fields,field_description:queue_job.field_queue_job__dependency_ids
+msgid "Dependency Jobs"
+msgstr ""
+
+#. module: queue_job
+#: model:ir.model.fields,field_description:queue_job.field_queue_job__dependent_ids
+msgid "Dependent Jobs"
+msgstr ""
 
 #. module: queue_job
 #: model:ir.model.fields,field_description:queue_job.field_queue_job__name
@@ -467,10 +478,20 @@ msgid "Jobs"
 msgstr "Taken"
 
 #. module: queue_job
+#: model:ir.model.fields,help:queue_job.field_queue_job__dependent_ids
+msgid "Jobs depending on this job."
+msgstr ""
+
+#. module: queue_job
 #. odoo-python
 #: code:addons/queue_job/models/queue_job.py:0
 msgid "Jobs for graph %s"
 msgstr "Taken voor grafiek %s"
+
+#. module: queue_job
+#: model:ir.model.fields,help:queue_job.field_queue_job__dependency_ids
+msgid "Jobs this job depends on."
+msgstr ""
 
 #. module: queue_job
 #: model:ir.model.fields,field_description:queue_job.field_queue_job__kwargs
@@ -555,6 +576,12 @@ msgid "Model %s not found"
 msgstr ""
 
 #. module: queue_job
+#: model:ir.model.fields,help:queue_job.field_queue_job_function__on_fail_method
+msgid ""
+"Model function to be called if the job is failed and will not be retried."
+msgstr ""
+
+#. module: queue_job
 #: model:ir.model.fields,field_description:queue_job.field_queue_job__my_activity_date_deadline
 msgid "My Activity Deadline"
 msgstr "Mijn activiteitstermijn"
@@ -611,6 +638,11 @@ msgstr "Aantal berichten dat een actie vereist"
 #: model:ir.model.fields,help:queue_job.field_queue_job__message_has_error_counter
 msgid "Number of messages with delivery error"
 msgstr "Aantal berichten met een afleverfout"
+
+#. module: queue_job
+#: model:ir.model.fields,field_description:queue_job.field_queue_job_function__on_fail_method
+msgid "On Fail Method"
+msgstr ""
 
 #. module: queue_job
 #: model:ir.model.fields,field_description:queue_job.field_queue_job_channel__parent_id
@@ -942,6 +974,9 @@ msgstr "Werknemer PID"
 #: code:addons/queue_job/models/queue_job.py:0
 msgid "id"
 msgstr ""
+
+#~ msgid "AutoVacuum Job Queue"
+#~ msgstr "AutoVacuum wachtrijtaken"
 
 #~ msgid "Cancelled by {}"
 #~ msgstr "Geannuleerd door {}"

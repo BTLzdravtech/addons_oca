@@ -5,6 +5,7 @@
 
 import re
 
+from odoo.fields import Command
 from odoo.tests import tagged
 
 from odoo.addons.account.tests.common import AccountTestInvoicingCommon
@@ -93,6 +94,9 @@ class TestTrialBalanceReport(AccountTestInvoicingCommon):
             ],
             limit=1,
         )
+        cls.foreign_currency = cls.setup_other_currency(
+            "EUR", rates=[("1900-01-01", 2.0)]
+        )
 
     def _create_account_account(self, vals):
         item = self.env["account.account"].create(vals)
@@ -171,8 +175,45 @@ class TestTrialBalanceReport(AccountTestInvoicingCommon):
         move = self.env["account.move"].create(move_vals)
         move.action_post()
 
+    def _add_currency_move(self, date, debit, credit, amount_currency, currency=None):
+        journal = self.env["account.journal"].search(
+            [("company_id", "=", self.env.user.company_id.id)], limit=1
+        )
+        move = self.env["account.move"].create(
+            {
+                "journal_id": journal.id,
+                "date": date,
+                "line_ids": [
+                    Command.create(
+                        {
+                            "debit": debit,
+                            "credit": credit,
+                            "partner_id": self.partner_a.id,
+                            "account_id": self.account100.id,
+                            "currency_id": (currency or self.foreign_currency).id,
+                            "amount_currency": amount_currency,
+                        }
+                    ),
+                    Command.create(
+                        {
+                            "debit": credit,
+                            "credit": debit,
+                            "partner_id": self.partner_a.id,
+                            "account_id": self.account200.id,
+                        }
+                    ),
+                ],
+            }
+        )
+        move.action_post()
+        return move
+
     def _get_report_lines(
-        self, with_partners=False, account_ids=False, show_hierarchy=False
+        self,
+        with_partners=False,
+        account_ids=False,
+        show_hierarchy=False,
+        foreign_currency=False,
     ):
         company = self.env.user.company_id
         trial_balance = self.env["trial.balance.report.wizard"].create(
@@ -186,6 +227,7 @@ class TestTrialBalanceReport(AccountTestInvoicingCommon):
                 "account_ids": account_ids,
                 "fy_start_date": self.fy_date_start,
                 "show_partner_details": with_partners,
+                "foreign_currency": foreign_currency,
             }
         )
         data = trial_balance._prepare_report_data()
@@ -715,3 +757,122 @@ class TestTrialBalanceReport(AccountTestInvoicingCommon):
         ]
         self.assertEqual(len(trial_balance_code_set), len(all_accounts_code_set))
         self.assertTrue(trial_balance_code_set == all_accounts_code_set)
+
+    def test_06_line_subsection_excluded(self):
+        """A posted move that contains a `line_subsection` display row must
+        not break the Trial Balance.
+
+        Odoo 19 introduced the `line_subsection` value in
+        `account.move.line.display_type`. Such rows carry no `account_id`,
+        so they reach `formatted_read_group` as a `False` group and the
+        downstream `_compute_account_amount` raises
+        `TypeError: 'bool' object is not subscriptable`.
+        """
+        journal = self.env["account.journal"].search(
+            [("company_id", "=", self.env.user.company_id.id)], limit=1
+        )
+        move = self.env["account.move"].create(
+            {
+                "journal_id": journal.id,
+                "date": self.date_start,
+                "line_ids": [
+                    Command.create(
+                        {
+                            "debit": 100.0,
+                            "credit": 0.0,
+                            "account_id": self.account200.id,
+                            "partner_id": self.partner_a.id,
+                        }
+                    ),
+                    Command.create(
+                        {
+                            "debit": 0.0,
+                            "credit": 100.0,
+                            "account_id": self.account100.id,
+                            "partner_id": self.partner_a.id,
+                        }
+                    ),
+                    Command.create(
+                        {
+                            "display_type": "line_subsection",
+                            "name": "Subsection label",
+                        }
+                    ),
+                ],
+            }
+        )
+        move.action_post()
+        self.assertIn(
+            "line_subsection",
+            move.line_ids.mapped("display_type"),
+            "Move was not created with a line_subsection row",
+        )
+        res_data = self._get_report_lines()
+        self.assertIn("trial_balance", res_data)
+        for entry in res_data["trial_balance"]:
+            self.assertTrue(
+                entry.get("id"),
+                f"Report contains a line with falsy id: {entry}",
+            )
+
+    def test_07_foreign_currency_initial_balance(self):
+        # GIVEN an initial balance in foreign currency (before the period)
+        self._add_currency_move(
+            date=self.previous_fy_date_end,
+            debit=1000,
+            credit=0,
+            amount_currency=2000,
+        )
+        self._add_currency_move(
+            date=self.date_start,
+            debit=500,
+            credit=0,
+            amount_currency=1000,
+        )
+
+        # WHEN
+        res_data = self._get_report_lines(foreign_currency=True)
+        # THEN
+        self.assertTrue(res_data["foreign_currency"])
+        account_lines = self._get_account_lines(
+            self.account100.id, res_data["trial_balance"]
+        )
+        self.assertTrue(account_lines)
+        total = res_data["total_amount"][self.account100.id]
+        self.assertEqual(total["initial_currency_balance"], 2000)
+        self.assertEqual(total["ending_currency_balance"], 3000)
+
+    def test_08_account_multicurrency_period_totals(self):
+        """Period totals must include every currency group of an account."""
+        company_currency = self.env.company.currency_id
+        self._add_currency_move(
+            date=self.date_start,
+            debit=100.0,
+            credit=0.0,
+            amount_currency=100.0,
+            currency=company_currency,
+        )
+        self._add_currency_move(
+            date=self.date_start,
+            debit=60.0,
+            credit=0.0,
+            amount_currency=120.0,
+        )
+        result = self._get_report_lines()
+        account_lines = self._get_account_lines(
+            self.account100.id, result["trial_balance"]
+        )
+        self.assertTrue(account_lines)
+        self.assertEqual(account_lines["initial_balance"], 0.0)
+        self.assertEqual(account_lines["debit"], 160.0)
+        self.assertEqual(account_lines["credit"], 0.0)
+        self.assertEqual(account_lines["final_balance"], 160.0)
+        result_foreign_currency = self._get_report_lines(foreign_currency=True)
+        account_lines = self._get_account_lines(
+            self.account100.id, result_foreign_currency["trial_balance"]
+        )
+        self.assertTrue(account_lines)
+        self.assertEqual(account_lines["debit"], 160.0)
+        self.assertEqual(account_lines["final_balance"], 160.0)
+        total = result_foreign_currency["total_amount"][self.account100.id]
+        self.assertEqual(total["ending_currency_balance"], 220.0)

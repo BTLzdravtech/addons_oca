@@ -90,7 +90,7 @@ def _async_http_get(scheme, host, port, user, password, db_name, job_uuid):
     #       if this was python3 I would be doing this with
     #       asyncio, aiohttp and aiopg
     def urlopen():
-        url = f"{scheme}://{host}:{port}/queue_job/runjob?db={db_name}&job_uuid={job_uuid}"
+        url = f"{scheme}://{host}:{port}/queue_job/runjob?job_uuid={job_uuid}"
         # pylint: disable=except-pass
         try:
             auth = None
@@ -98,7 +98,9 @@ def _async_http_get(scheme, host, port, user, password, db_name, job_uuid):
                 auth = (user, password)
             # we are not interested in the result, so we set a short timeout
             # but not too short so we trap and log hard configuration errors
-            response = requests.get(url, timeout=1, auth=auth)
+            response = requests.get(
+                url, timeout=1, auth=auth, headers={"X-Odoo-Database": db_name}
+            )
 
             # raise_for_status will result in either nothing, a Client Error
             # for HTTP Response codes between 400 and 500 or a Server Error
@@ -333,6 +335,7 @@ class QueueJobRunner:
         self.channel_manager.simple_configure(channel_config_string)
         self.db_by_name = {}
         self._stop = False
+        self._stop_event = threading.Event()
         self._stop_pipe = os.pipe()
 
     def __del__(self):
@@ -484,9 +487,18 @@ class QueueJobRunner:
                             continue
                         key.fileobj.poll()
 
+    def sleep(self, seconds):
+        """Wait for ``seconds``, or less if :meth:`stop` is called meanwhile.
+
+        A plain ``time.sleep`` would hold the thread, and so the server
+        shutdown that joins it, for up to the whole delay.
+        """
+        self._stop_event.wait(seconds)
+
     def stop(self):
         _logger.info("graceful stop requested")
         self._stop = True
+        self._stop_event.set()
         # wakeup the select() in wait_notification
         os.write(self._stop_pipe[1], b".")
 
@@ -518,12 +530,12 @@ class QueueJobRunner:
                     ERROR_RECOVERY_DELAY,
                 )
                 self.close_databases()
-                time.sleep(ERROR_RECOVERY_DELAY)
+                self.sleep(ERROR_RECOVERY_DELAY)
             except Exception:
                 _logger.exception(
                     "exception: sleeping %ds and retrying", ERROR_RECOVERY_DELAY
                 )
                 self.close_databases()
-                time.sleep(ERROR_RECOVERY_DELAY)
+                self.sleep(ERROR_RECOVERY_DELAY)
         self.close_databases(remove_jobs=False)
         _logger.info("stopped")

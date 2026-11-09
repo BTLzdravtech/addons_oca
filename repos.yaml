@@ -78,6 +78,14 @@
         - oca 19.0
     target: nexterp 19.0
 
+./e-commerce:
+    remotes:
+        oca: git@github.com:OCA/e-commerce.git
+        nexterp: git@github.com:NextERP-Romania/e-commerce.git
+    merges:
+        - oca 19.0
+    target: nexterp 19.0
+
 ./hr:
     remotes:
         oca: git@github.com:OCA/hr.git

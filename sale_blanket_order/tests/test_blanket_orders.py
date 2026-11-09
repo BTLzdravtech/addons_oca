@@ -123,10 +123,54 @@ class TestSaleBlanketOrders(SaleCommon):
     def setup_independent_user(cls):
         return None
 
+    def test_blanket_order_report_payment_terms(self):
+        payment_term_note = "Payment due within thirty days"
+        self.payment_term.note = payment_term_note
+        blanket_order = self.blanket_order_obj.create(
+            {
+                "partner_id": self.partner.id,
+                "validity_start_date": self.yesterday,
+                "validity_date": self.tomorrow,
+                "payment_term_id": self.payment_term.id,
+                "pricelist_id": self.sale_pricelist.id,
+            }
+        )
+
+        html = self.env["ir.actions.report"]._render_qweb_html(
+            "sale_blanket_order.report_blanketorder", blanket_order.ids
+        )[0]
+
+        self.assertIn(payment_term_note, html.decode())
+
+    def test_00_confirm_without_validity_start_date(self):
+        """Test blanket order confirmation requires a validity start date."""
+        blanket_order = self.blanket_order_obj.create(
+            {
+                "partner_id": self.partner.id,
+                "validity_date": self.tomorrow,
+                "payment_term_id": self.payment_term.id,
+                "pricelist_id": self.sale_pricelist.id,
+                "line_ids": [
+                    fields.Command.create(
+                        {
+                            "product_id": self.product1.id,
+                            "product_uom": self.product1.uom_id.id,
+                            "original_uom_qty": 20.0,
+                            "price_unit": 30.0,
+                        }
+                    )
+                ],
+            }
+        )
+
+        with self.assertRaisesRegex(UserError, "Validity start date is mandatory"):
+            blanket_order.action_confirm()
+
     def test_01_create_blanket_order(self):
         """We create a blanket order and check constrains to confirm BO"""
         with Form(self.blanket_order_obj) as bo:
             bo.partner_id = self.partner
+            bo.validity_start_date = self.yesterday
             bo.validity_date = fields.Date.to_string(self.yesterday)
             bo.payment_term_id = self.payment_term
             bo.pricelist_id = self.sale_pricelist
@@ -156,7 +200,7 @@ class TestSaleBlanketOrders(SaleCommon):
         self.assertEqual(blanket_order.state, "draft")
 
         # date in the past
-        with self.assertRaises(UserError):
+        with self.assertRaisesRegex(UserError, "Validity date must be in the future"):
             blanket_order.action_confirm()
 
         blanket_order.validity_date = fields.Date.to_string(self.tomorrow)
@@ -175,6 +219,7 @@ class TestSaleBlanketOrders(SaleCommon):
         """We create a blanket order and create two sale orders"""
         with Form(self.blanket_order_obj) as bo:
             bo.partner_id = self.partner
+            bo.validity_start_date = self.yesterday
             bo.validity_date = self.tomorrow
             bo.payment_term_id = self.payment_term
             bo.pricelist_id = self.sale_pricelist
@@ -237,6 +282,7 @@ class TestSaleBlanketOrders(SaleCommon):
         from the blanket order lines"""
         with Form(self.blanket_order_obj) as bo:
             bo.partner_id = self.partner
+            bo.validity_start_date = self.yesterday
             bo.validity_date = self.tomorrow
             bo.payment_term_id = self.payment_term
             bo.pricelist_id = self.sale_pricelist
@@ -272,6 +318,7 @@ class TestSaleBlanketOrders(SaleCommon):
         correctly assigned"""
         with Form(self.blanket_order_obj) as bo:
             bo.partner_id = self.partner
+            bo.validity_start_date = self.yesterday
             bo.validity_date = self.tomorrow
             bo.payment_term_id = self.payment_term
             bo.pricelist_id = self.sale_pricelist
@@ -310,6 +357,7 @@ class TestSaleBlanketOrders(SaleCommon):
         lines have been correctly assigned"""
         with Form(self.blanket_order_obj) as bo:
             bo.partner_id = self.partner
+            bo.validity_start_date = self.yesterday
             bo.validity_date = self.tomorrow
             bo.payment_term_id = self.payment_term
             bo.pricelist_id = self.sale_pricelist
@@ -339,6 +387,7 @@ class TestSaleBlanketOrders(SaleCommon):
         """
         with Form(self.blanket_order_obj) as bo:
             bo.partner_id = self.partner
+            bo.validity_start_date = self.yesterday
             bo.validity_date = self.tomorrow
             bo.payment_term_id = self.payment_term
             bo.pricelist_id = self.sale_pricelist
@@ -409,6 +458,7 @@ class TestSaleBlanketOrders(SaleCommon):
     def test_07_unlink_different_states(self):
         with Form(self.blanket_order_obj) as bo:
             bo.partner_id = self.partner
+            bo.validity_start_date = self.yesterday
             bo.validity_date = self.tomorrow
             bo.payment_term_id = self.payment_term
             bo.pricelist_id = self.sale_pricelist
@@ -431,6 +481,7 @@ class TestSaleBlanketOrders(SaleCommon):
         # Recreate since it was deleted
         with Form(self.blanket_order_obj) as bo:
             bo.partner_id = self.partner
+            bo.validity_start_date = self.yesterday
             bo.validity_date = self.tomorrow
             bo.payment_term_id = self.payment_term
             bo.pricelist_id = self.sale_pricelist
@@ -463,6 +514,7 @@ class TestSaleBlanketOrders(SaleCommon):
     def test_08_change_display_type(self):
         with Form(self.blanket_order_obj) as bo:
             bo.partner_id = self.partner
+            bo.validity_start_date = self.yesterday
             bo.validity_date = fields.Date.to_string(self.yesterday)
             bo.payment_term_id = self.payment_term
             bo.pricelist_id = self.sale_pricelist
@@ -477,3 +529,47 @@ class TestSaleBlanketOrders(SaleCommon):
             UserError, "You cannot change the type of a sale order line"
         ):
             section.display_type = False
+
+    def test_09_confirm_with_zero_line_quantity(self):
+        """Test blanket order confirm rejects accountable lines without quantity."""
+        with Form(self.blanket_order_obj) as bo:
+            bo.partner_id = self.partner
+            bo.validity_start_date = self.yesterday
+            bo.validity_date = self.tomorrow
+            bo.payment_term_id = self.payment_term
+            bo.pricelist_id = self.sale_pricelist
+            with bo.line_ids.new() as line:
+                line.product_id = self.product1
+                line.product_uom = self.product1.uom_id
+                line.original_uom_qty = 0.0
+                line.price_unit = 30.0
+        blanket_order = bo.save()
+
+        with self.assertRaisesRegex(UserError, "Quantity must be greater than zero"):
+            blanket_order.action_confirm()
+
+    def test_10_wizard_rejects_future_validity_start_date(self):
+        """Test sale orders cannot be created before blanket order validity starts."""
+        with Form(self.blanket_order_obj) as bo:
+            bo.partner_id = self.partner
+            bo.validity_start_date = self.tomorrow
+            bo.validity_date = self.tomorrow
+            bo.payment_term_id = self.payment_term
+            bo.pricelist_id = self.sale_pricelist
+            with bo.line_ids.new() as line:
+                line.product_id = self.product1
+                line.product_uom = self.product1.uom_id
+                line.original_uom_qty = 20.0
+                line.price_unit = 30.0
+        blanket_order = bo.save()
+        blanket_order.action_confirm()
+
+        error = "before its validity start date"
+        with self.assertRaisesRegex(UserError, error):
+            self.blanket_order_wiz_obj.with_context(
+                active_id=blanket_order.id, active_model="sale.blanket.order"
+            ).create({})
+        with self.assertRaisesRegex(UserError, error):
+            self.blanket_order_wiz_obj.with_context(
+                active_ids=blanket_order.line_ids.ids
+            ).create({})

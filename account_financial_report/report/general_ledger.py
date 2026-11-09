@@ -61,13 +61,16 @@ class GeneralLedgerReport(models.AbstractModel):
             )
         return taxes_data
 
-    def _get_account_type_domain(self, grouped_by):
+    def _get_account_type_domain(self, grouped_by, model_name="account.move.line"):
         """To avoid set all possible types, set in or not in as operator of the types
         we are interested in. In v15 we used the internal_type field (type of
         account.account.type)."""
-        at_op = "in" if grouped_by != "taxes" else "not in"
+        at_op = "=" if grouped_by != "taxes" else "!="
+        fname = "is_account_reconcile"
+        if model_name == "account.account":
+            fname = "reconcile"
         return [
-            ("account_type", at_op, ["asset_receivable", "liability_payable"]),
+            (fname, at_op, True),
         ]
 
     def _get_acc_prt_accounts_ids(self, company_id, grouped_by):
@@ -76,7 +79,7 @@ class GeneralLedgerReport(models.AbstractModel):
             return []
         accounts_domain = [
             ("company_ids", "in", [company_id]),
-        ] + self._get_account_type_domain(grouped_by)
+        ] + self._get_account_type_domain(grouped_by, "account.account")
         acc_prt_accounts = self.env["account.account"].search(accounts_domain)
         return acc_prt_accounts.ids
 
@@ -94,8 +97,8 @@ class GeneralLedgerReport(models.AbstractModel):
         domain += [("date", "<", date_from)]
         accounts = self.env["account.account"].search(accounts_domain)
         domain += [("account_id", "in", accounts.ids)]
-        if acc_prt and grouped_by != "none":
-            domain += self._get_account_type_domain(grouped_by)
+        if acc_prt:
+            domain += self._get_account_type_domain(grouped_by, "account.move.line")
         return domain
 
     def _get_initial_balances_pl_ml_domain(
@@ -205,23 +208,6 @@ class GeneralLedgerReport(models.AbstractModel):
         gl_initial_acc = self._get_accounts_initial_balance(
             initial_domain_bs, initial_domain_pl
         )
-        if grouped_by != "none":
-            return gl_initial_acc
-        # If grouped_by none we add balance
-        domain = list(base_domain) + [("date", "<", date_from)]
-        if account_ids:
-            domain += [("account_id", "in", account_ids)]
-        rows = self.env["account.move.line"].read_group(
-            domain=domain,
-            fields=["account_id", "debit", "credit", "balance", "amount_currency:sum"],
-            groupby=["account_id"],
-        )
-        covered_ids = {
-            row["account_id"][0] for row in gl_initial_acc if row.get("account_id")
-        }
-        for row in rows:
-            if row.get("account_id") and row["account_id"][0] not in covered_ids:
-                gl_initial_acc.append(row)
         return gl_initial_acc
 
     def _prepare_gen_ld_data_item(self, gl):
@@ -415,7 +401,11 @@ class GeneralLedgerReport(models.AbstractModel):
         cost_center_ids,
     ):
         domain = [
-            ("display_type", "not in", ["line_note", "line_section"]),
+            (
+                "display_type",
+                "not in",
+                ["line_note", "line_section", "line_subsection"],
+            ),
             ("date", ">=", date_from),
             ("date", "<=", date_to),
         ]
@@ -705,6 +695,9 @@ class GeneralLedgerReport(models.AbstractModel):
                     "currency_id": accounts_data[acc_id]["currency_id"],
                     "centralized": accounts_data[acc_id]["centralized"],
                     "grouped_by": grouped_by,
+                    "include_initial_balance": accounts_data[acc_id][
+                        "include_initial_balance"
+                    ],
                 }
             )
             if not gen_led_data[acc_id][grouped_by]:

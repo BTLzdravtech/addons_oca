@@ -13,8 +13,29 @@ from datetime import datetime, timedelta
 from random import randint
 
 import odoo
+from odoo.models import BaseModel
 
 from .exception import FailedJobError, NoSuchJobError, RetryableJobError
+
+
+def _rebind_to_cr(value, cr):
+    """Rebind any BaseModel inside ``value`` to the cursor ``cr``.
+
+    Recurses into lists, tuples and dicts. Preserves uid/su/context of each
+    inner env - only the cursor is swapped. Recordsets already bound to
+    ``cr`` and non-recordset values pass through untouched. Containers are
+    rebuilt, so in-place changes to the result are lost.
+    """
+    if isinstance(value, BaseModel):
+        if value.env.cr is cr:
+            return value
+        return value.with_env(value.env(cr=cr))
+    if isinstance(value, (list, tuple)):
+        return type(value)(_rebind_to_cr(v, cr) for v in value)
+    if isinstance(value, dict):
+        return {k: _rebind_to_cr(v, cr) for k, v in value.items()}
+    return value
+
 
 WAIT_DEPENDENCIES = "wait_dependencies"
 PENDING = "pending"
@@ -410,6 +431,12 @@ class Job:
         self.job_config = (
             self.env["queue.job.function"].sudo().job_config(self.job_function_name)
         )
+        on_fail_method_name = self.job_config.on_fail_method_name
+        if on_fail_method_name and not _is_model_method(
+            getattr(self.recordset, on_fail_method_name, None)
+        ):
+            raise TypeError("Job accepts only methods of Models")
+        self.on_fail_method_name = on_fail_method_name
 
         self.state = PENDING
 
@@ -513,54 +540,51 @@ class Job:
     def in_temporary_env(self):
         with self.env.registry.cursor() as new_cr:
             env = self.env
-            self._env = env(cr=new_cr)
             try:
+                self._env = env(cr=new_cr)
                 yield
             finally:
                 self._env = env
-
-    def _get_common_dependent_jobs_query(self):
-        return """
-            UPDATE queue_job
-            SET state = %s
-            FROM (
-            SELECT child.id, array_agg(parent.state) as parent_states
-            FROM queue_job job
-            JOIN LATERAL
-              json_array_elements_text(
-                  job.dependencies::json->'reverse_depends_on'
-              ) child_deps ON true
-            JOIN queue_job child
-            ON child.graph_uuid = job.graph_uuid
-            AND child.uuid = child_deps
-            JOIN LATERAL
-                json_array_elements_text(
-                  child.dependencies::json->'depends_on'
-                ) parent_deps ON true
-            JOIN queue_job parent
-            ON parent.graph_uuid = job.graph_uuid
-            AND parent.uuid = parent_deps
-            WHERE job.uuid = %s
-            GROUP BY child.id
-            ) jobs
-            WHERE
-            queue_job.id = jobs.id
-            AND %s = ALL(jobs.parent_states)
-            AND state = %s;
-        """
 
     def should_check_dependents(self):
         return any(self.__reverse_depends_on_uuids)
 
     def enqueue_waiting(self):
-        sql = self._get_common_dependent_jobs_query()
-        self.env.cr.execute(sql, (PENDING, self.uuid, DONE, WAIT_DEPENDENCIES))
-        self.env["queue.job"].invalidate_model(["state"])
+        dependents = (
+            self.env["queue.job"]
+            .sudo()
+            .search(
+                [
+                    ("graph_uuid", "=", self.graph_uuid),
+                    ("state", "=", WAIT_DEPENDENCIES),
+                    ("dependency_ids", "any", [("uuid", "=", self.uuid)]),
+                    ("dependency_ids", "not any", [("state", "!=", DONE)]),
+                ]
+            )
+        )
+        dependents.state = PENDING
 
     def cancel_dependent_jobs(self):
-        sql = self._get_common_dependent_jobs_query()
-        self.env.cr.execute(sql, (CANCELLED, self.uuid, CANCELLED, WAIT_DEPENDENCIES))
-        self.env["queue.job"].invalidate_model(["state"])
+        """Cancel the jobs waiting on this one, and their own dependents
+
+        A dependent job can no longer run once one of its dependencies is
+        cancelled, whatever the state of the others.
+        """
+        dependents = self.db_record().dependent_ids
+        while dependents:
+            dependents = dependents.filtered(
+                lambda dependent: dependent.state == WAIT_DEPENDENCIES
+            )
+            dependents.write(
+                {
+                    "state": CANCELLED,
+                    "date_cancelled": self.date_cancelled,
+                    "result": self.env._(
+                        "Cancelled because a job it depends on was cancelled"
+                    ),
+                }
+            )
+            dependents = dependents.dependent_ids
 
     def store(self):
         """Store the Job"""
@@ -687,6 +711,24 @@ class Job:
     @env.setter
     def _env(self, env):
         self.recordset = self.recordset.with_env(env)
+
+    @property
+    def args(self):
+        """Positional arguments, rebound to the job's current cursor."""
+        return _rebind_to_cr(self._args, self.env.cr)
+
+    @args.setter
+    def args(self, value):
+        self._args = value
+
+    @property
+    def kwargs(self):
+        """Keyword arguments, rebound to the job's current cursor."""
+        return _rebind_to_cr(self._kwargs, self.env.cr)
+
+    @kwargs.setter
+    def kwargs(self, value):
+        self._kwargs = value
 
     @property
     def func(self):
@@ -829,6 +871,13 @@ class Job:
         for k, v in kw.items():
             if v is not None:
                 setattr(self, k, v)
+
+    def on_fail(self, fail_vals):
+        if not self.on_fail_method_name:
+            return
+        on_fail_func = getattr(self.recordset, self.on_fail_method_name, None)
+        if on_fail_func:
+            on_fail_func(**fail_vals)
 
     def __repr__(self):
         return f"<Job {self.uuid}, priority:{self.priority}>"
