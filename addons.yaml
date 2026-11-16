@@ -8,6 +8,9 @@ account-invoice-reporting:
 account-financial-reporting:
   - account_financial_report
   - partner_statement
+account-financial-tools:
+  - account_asset_force_account
+  - account_asset_management
 account-reconcile:
   - account_statement_base
 bank-statement-import:

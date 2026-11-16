@@ -30,6 +30,14 @@
         - oca 19.0
     target: nexterp 19.0
 
+./account-financial-tools:
+    remotes:
+        oca: git@github.com:OCA/account-financial-tools.git
+        nexterp: git@github.com:NextERP-Romania/account-financial-tools.git
+    merges:
+        - oca 19.0
+    target: nexterp 19.0
+
 ./account-reconcile:
     remotes:
         oca: git@github.com:OCA/account-reconcile.git
