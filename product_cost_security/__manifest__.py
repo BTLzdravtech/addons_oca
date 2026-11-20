@@ -3,7 +3,7 @@
 {
     "name": "Product Cost Security",
     "summary": "Product cost security restriction view",
-    "version": "19.0.1.0.1",
+    "version": "19.0.1.0.2",
     "development_status": "Production/Stable",
     "maintainers": ["sergio-teruel", "rafaelbn", "yajo"],
     "category": "Product",
@@ -15,7 +15,7 @@
     "depends": ["product", "purchase"],
     "data": [
         "security/product_cost_security.xml",
-        "views/product_views.xml",
         "views/purchase_views.xml",
+        "views/product_views.xml",
     ],
 }
