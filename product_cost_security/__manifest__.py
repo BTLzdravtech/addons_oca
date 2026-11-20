@@ -3,7 +3,7 @@
 {
     "name": "Product Cost Security",
     "summary": "Product cost security restriction view",
-    "version": "19.0.1.0.0",
+    "version": "19.0.1.0.1",
     "development_status": "Production/Stable",
     "maintainers": ["sergio-teruel", "rafaelbn", "yajo"],
     "category": "Product",
@@ -12,6 +12,10 @@
     "license": "AGPL-3",
     "application": False,
     "installable": True,
-    "depends": ["product"],
-    "data": ["security/product_cost_security.xml", "views/product_views.xml"],
+    "depends": ["product", "purchase"],
+    "data": [
+        "security/product_cost_security.xml",
+        "views/product_views.xml",
+        "views/purchase_views.xml",
+    ],
 }
